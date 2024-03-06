@@ -49,6 +49,8 @@ internal class CrealityClient : IDisposable
 
     public async Task Connect()
     {
+        Log.Info("Connecting");
+
         var uri = new Uri(ConfigurationManager.AppSettings["PrinterURL"]);
         var wsUri = $"ws://{uri.Host}:9999";
 
@@ -82,6 +84,8 @@ internal class CrealityClient : IDisposable
                 await Task.Delay(ConnectRetryInterval);
             }
         }
+
+        Log.Info("Connected");
 
         OnIsConnectedChanged();
 

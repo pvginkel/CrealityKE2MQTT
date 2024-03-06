@@ -5,6 +5,11 @@ namespace CrealityKE2MQTT;
 
 public class ServiceImpl : IDisposable
 {
+    static ServiceImpl()
+    {
+        Log4NetConfig.ConfigureLog4Net();
+    }
+
     private static readonly HashSet<string> AllowedKeys =
     [
         "TotalLayer",

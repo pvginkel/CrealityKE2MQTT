@@ -38,6 +38,8 @@ internal class MQTTClient : IDisposable
         if (!e.ClientWasConnected)
             return;
 
+        Log.Info("Reconnecting");
+
         while (!_closed)
         {
             try
@@ -59,6 +61,8 @@ internal class MQTTClient : IDisposable
 
     public async Task Connect()
     {
+        Log.Info("Connecting");
+
         var mqttClientOptions = new MqttClientOptionsBuilder()
             .WithTcpServer(ConfigurationManager.AppSettings["MQTTServer"])
             .WithCredentials(
@@ -74,6 +78,8 @@ internal class MQTTClient : IDisposable
             .Build();
 
         await _client.ConnectAsync(mqttClientOptions);
+
+        Log.Info("Connected");
 
         await PublishDiscovery();
         await SetOnline();
