@@ -40,49 +40,47 @@ internal class MQTTClient : IDisposable
 
         Log.Info("Reconnecting");
 
-        while (!_closed)
-        {
-            try
-            {
-                await _client.ConnectAsync(_client.Options);
-
-                await SetOnline();
-
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("Failed to reconnect, retrying", ex);
-
-                await Task.Delay(ReconnectInterval);
-            }
-        }
+        await Connect();
     }
 
     public async Task Connect()
     {
         Log.Info("Connecting");
 
-        var mqttClientOptions = new MqttClientOptionsBuilder()
-            .WithTcpServer(ConfigurationManager.AppSettings["MQTTServer"])
-            .WithCredentials(
-                "mqtt",
-                Environment.ExpandEnvironmentVariables(
-                    ConfigurationManager.AppSettings["MQTTPassword"]
-                )
-            )
-            .WithWillTopic(_stateTopic)
-            .WithWillPayload("offline")
-            .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-            .WithWillRetain()
-            .Build();
+        while (!_closed)
+        {
+            try
+            {
+                var mqttClientOptions = new MqttClientOptionsBuilder()
+                    .WithTcpServer(ConfigurationManager.AppSettings["MQTTServer"])
+                    .WithCredentials(
+                        "mqtt",
+                        Environment.ExpandEnvironmentVariables(
+                            ConfigurationManager.AppSettings["MQTTPassword"]
+                        )
+                    )
+                    .WithWillTopic(_stateTopic)
+                    .WithWillPayload("offline")
+                    .WithWillQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithWillRetain()
+                    .Build();
 
-        await _client.ConnectAsync(mqttClientOptions);
+                await _client.ConnectAsync(mqttClientOptions);
 
-        Log.Info("Connected");
+                Log.Info("Connected");
 
-        await PublishDiscovery();
-        await SetOnline();
+                await PublishDiscovery();
+                await SetOnline();
+
+                break;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Failed to connect, retrying", ex);
+
+                await Task.Delay(ReconnectInterval);
+            }
+        }
     }
 
     public async Task PublishState(string data)
