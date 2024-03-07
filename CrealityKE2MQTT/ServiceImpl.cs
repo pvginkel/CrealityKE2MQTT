@@ -38,8 +38,14 @@ public class ServiceImpl : IDisposable
 
         _crealityClient.DataReceived += _crealityClient_DataReceived;
         _crealityClient.IsConnectedChanged += _crealityClient_IsConnectedChanged;
+        _mqttClient.IsConnectedChanged += _mqttClient_IsConnectedChanged;
 
         Connect();
+    }
+
+    private async void _mqttClient_IsConnectedChanged(object sender, EventArgs e)
+    {
+        await PublishState();
     }
 
     private async void _crealityClient_IsConnectedChanged(object sender, EventArgs e)
@@ -69,7 +75,7 @@ public class ServiceImpl : IDisposable
     {
         var state = _state.ToString(Formatting.None);
 
-        if (state != _lastState)
+        if (state != _lastState && _mqttClient.IsConnected)
         {
             _lastState = state;
 

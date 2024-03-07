@@ -1,0 +1,4 @@
+- Compile a Release build.
+- Run `Deploy.bat` to publish the binaries.
+- Run `Update.bat` on the target machine to copy the binaries.
+- Run `Install.bat` to do the initial installation.

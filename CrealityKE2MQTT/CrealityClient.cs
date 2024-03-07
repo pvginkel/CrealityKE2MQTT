@@ -33,13 +33,16 @@ internal class CrealityClient : IDisposable
     {
         try
         {
-            await SendAsync(
-                new JObject
-                {
-                    ["ModeCode"] = "heart_beat",
-                    ["msg"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                }.ToString(Formatting.None)
-            );
+            if (IsConnected)
+            {
+                await SendAsync(
+                    new JObject
+                    {
+                        ["ModeCode"] = "heart_beat",
+                        ["msg"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+                    }.ToString(Formatting.None)
+                );
+            }
         }
         catch (Exception ex)
         {

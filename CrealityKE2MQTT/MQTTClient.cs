@@ -21,6 +21,10 @@ internal class MQTTClient : IDisposable
     private readonly string _stateTopic;
     private volatile bool _closed;
 
+    public bool IsConnected => _client.IsConnected;
+
+    public event EventHandler? IsConnectedChanged;
+
     private static string SafeName(string name) => Regex.Replace(name, "[^a-zA-Z0-9_-]", "_");
 
     public MQTTClient()
@@ -35,6 +39,8 @@ internal class MQTTClient : IDisposable
 
     private async Task _client_DisconnectedAsync(MqttClientDisconnectedEventArgs e)
     {
+        OnIsConnectedChanged();
+
         if (!e.ClientWasConnected)
             return;
 
@@ -72,6 +78,8 @@ internal class MQTTClient : IDisposable
                 await PublishDiscovery();
                 await SetOnline();
 
+                OnIsConnectedChanged();
+
                 break;
             }
             catch (Exception ex)
@@ -104,7 +112,8 @@ internal class MQTTClient : IDisposable
         await _client.PublishStringAsync(
             _stateTopic,
             "online",
-            MqttQualityOfServiceLevel.AtLeastOnce
+            MqttQualityOfServiceLevel.AtLeastOnce,
+            retain: true
         );
     }
 
@@ -138,6 +147,11 @@ internal class MQTTClient : IDisposable
             message.ToString(Formatting.None),
             qualityOfServiceLevel: MqttQualityOfServiceLevel.AtLeastOnce
         );
+    }
+
+    protected virtual void OnIsConnectedChanged()
+    {
+        IsConnectedChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Dispose()
