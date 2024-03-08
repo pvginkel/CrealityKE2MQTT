@@ -145,7 +145,8 @@ internal class MQTTClient : IDisposable
         await _client.PublishStringAsync(
             $"homeassistant/sensor/{uniqueIdentifier}/config",
             message.ToString(Formatting.None),
-            qualityOfServiceLevel: MqttQualityOfServiceLevel.AtLeastOnce
+            qualityOfServiceLevel: MqttQualityOfServiceLevel.AtLeastOnce,
+            retain: true
         );
     }
 
