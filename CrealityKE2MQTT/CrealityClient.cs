@@ -1,5 +1,7 @@
 ﻿using System.Configuration;
+using System.Net.Http;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using log4net;
 using Newtonsoft.Json;
@@ -10,176 +12,76 @@ namespace CrealityKE2MQTT;
 internal class CrealityClient : IDisposable
 {
     private static readonly ILog Log = LogManager.GetLogger(typeof(CrealityClient));
-    private static readonly TimeSpan ConnectRetryInterval = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan TimeoutInterval = TimeSpan.FromSeconds(3);
 
-    private ClientWebSocket? _client;
-    private readonly AsyncLock _sendLock = new();
-    private readonly Timer _heartbeatTimer;
-    private volatile bool _closed;
+    private readonly CancellationTokenSource _cts = new();
+    private readonly ManualResetEventSlim _event = new();
+    private readonly HttpClient _client = new();
+    private volatile int _connected;
 
-    public bool IsConnected => _client?.State == WebSocketState.Open;
+    public bool IsConnected => _connected != 0;
 
     public event EventHandler<CrealityDataReceivedEventArgs>? DataReceived;
     public event EventHandler? IsConnectedChanged;
 
     public CrealityClient()
     {
-        _heartbeatTimer = new Timer(OnHeartbeat, null, HeartbeatInterval, HeartbeatInterval);
+        _client.Timeout = TimeoutInterval;
+
+        PollLoop();
     }
 
-    private async void OnHeartbeat(object state)
+    private async void PollLoop()
     {
-        try
-        {
-            if (IsConnected)
-            {
-                await SendAsync(
-                    new JObject
-                    {
-                        ["ModeCode"] = "heart_beat",
-                        ["msg"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-                    }.ToString(Formatting.None)
-                );
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("Failed to send hearbeat", ex);
-        }
-    }
-
-    public async Task Connect()
-    {
-        Log.Info("Connecting");
-
-        var uri = new Uri(ConfigurationManager.AppSettings["PrinterURL"]);
-        var wsUri = $"ws://{uri.Host}:9999";
-
-        try
-        {
-            _client?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Debug("Client dispose failed", ex);
-        }
-
-        _client = null;
-
-        OnIsConnectedChanged();
-
-        while (!_closed)
+        while (!_cts.IsCancellationRequested)
         {
             try
             {
-                _client = new ClientWebSocket();
+                using var response = await _client.GetAsync(
+                    "http://192.168.178.107:7125/printer/objects/query?heater_bed&extruder&print_stats&display_status",
+                    _cts.Token
+                );
 
-                await _client.ConnectAsync(new Uri(wsUri), default);
+                SetConnected(true);
 
-                break;
+                OnDataReceived(
+                    new CrealityDataReceivedEventArgs(await response.Content.ReadAsStringAsync())
+                );
             }
             catch (Exception ex)
             {
-                Log.Warn("Failed to connect, retrying", ex);
+                SetConnected(false);
 
-                await Task.Delay(ConnectRetryInterval);
+                Log.Warn("Failed to get status", ex);
             }
+
+            await Task.Delay(Interval, _cts.Token);
         }
 
-        Log.Info("Connected");
-
-        OnIsConnectedChanged();
-
-        StartReceiveLoop();
-
-        await SendAsync(
-            new JObject
-            {
-                ["method"] = "get",
-                ["params"] = new JObject { ["reqProbedMatrix"] = 1 }
-            }.ToString(Formatting.None)
-        );
-    }
-
-    private async Task SendAsync(string message)
-    {
-        var buffer = Encoding.UTF8.GetBytes(message);
-
-        await SendAsync(new ArraySegment<byte>(buffer), WebSocketMessageType.Text);
-    }
-
-    private async Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType)
-    {
-        var client = _client;
-        if (client == null)
-            throw new InvalidOperationException("Not connected");
-
-        using (await _sendLock.LockAsync(SendTimeout))
-        {
-            await client.SendAsync(buffer, messageType, true, default);
-        }
-    }
-
-    private async void StartReceiveLoop()
-    {
-        var client = _client;
-        if (client == null)
-            throw new InvalidOperationException("Not connected");
-
-        var buffer = new byte[4096];
-        using var stream = new MemoryStream();
-
-        while (true)
-        {
-            try
-            {
-                stream.SetLength(0);
-
-                while (true)
-                {
-                    var result = await client.ReceiveAsync(new ArraySegment<byte>(buffer), default);
-
-                    stream.Write(buffer, 0, result.Count);
-
-                    if (result.EndOfMessage)
-                        break;
-                }
-
-                stream.Position = 0;
-
-                using var reader = new StreamReader(stream, Encoding.UTF8, false, 1024, true);
-
-                // ReSharper disable once MethodHasAsyncOverload
-                HandleMessage(reader.ReadToEnd());
-            }
-            catch
-            {
-                break;
-            }
-        }
-
-        if (!_closed)
-            await Connect();
-    }
-
-    private void HandleMessage(string message)
-    {
-        OnDataReceived(new CrealityDataReceivedEventArgs(message));
+        _event.Set();
     }
 
     public void Dispose()
     {
-        _closed = true;
+        _cts.Cancel();
 
-        _client?.Dispose();
-        _client = null;
+        _event.Wait();
+
+        _client.Dispose();
+
+        SetConnected(false);
 
         OnIsConnectedChanged();
+    }
 
-        _heartbeatTimer.Dispose();
-        _sendLock.Dispose();
+    private void SetConnected(bool connected)
+    {
+        var expected = connected ? 0 : 1;
+        var target = connected ? 1 : 0;
+
+        if (Interlocked.CompareExchange(ref _connected, target, expected) == expected)
+            OnIsConnectedChanged();
     }
 
     protected virtual void OnDataReceived(CrealityDataReceivedEventArgs e)

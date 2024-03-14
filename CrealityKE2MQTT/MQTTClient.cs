@@ -138,7 +138,7 @@ internal class MQTTClient : IDisposable
             ["object_id"] = ConfigurationManager.AppSettings["PrinterEntityID"],
             ["state_topic"] = _entityTopic,
             ["unit_of_measurement"] = "%",
-            ["value_template"] = "{{ value_json.printProgress }}",
+            ["value_template"] = "{{ value_json.display_status.progress * 100 }}",
             ["unique_id"] = uniqueIdentifier
         };
 

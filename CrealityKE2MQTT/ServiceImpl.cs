@@ -1,34 +1,21 @@
-﻿using Newtonsoft.Json;
+﻿using log4net;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace CrealityKE2MQTT;
 
 public class ServiceImpl : IDisposable
 {
+    private static readonly ILog Log = LogManager.GetLogger(typeof(ServiceImpl));
+
     static ServiceImpl()
     {
         Log4NetConfig.ConfigureLog4Net();
     }
 
-    private static readonly HashSet<string> AllowedKeys =
-    [
-        "TotalLayer",
-        "layer",
-        "bedTemp0",
-        "nozzleTemp",
-        "printFileName",
-        "printJobTime",
-        "printLeftTime",
-        "printProgress",
-        "printStartTime",
-        "targetBedTemp0",
-        "targetNozzleTemp",
-        "usedMaterialLength"
-    ];
-
     private readonly MQTTClient _mqttClient;
     private readonly CrealityClient _crealityClient;
-    private readonly JObject _state = new();
+    private JObject _state = new();
     private string _lastState = "";
 
     public ServiceImpl()
@@ -50,6 +37,8 @@ public class ServiceImpl : IDisposable
 
     private async void _crealityClient_IsConnectedChanged(object sender, EventArgs e)
     {
+        Log.DebugFormat("Creality client connected: {0}", _crealityClient.IsConnected);
+
         _state["connected"] = _crealityClient.IsConnected;
 
         await PublishState();
@@ -60,13 +49,9 @@ public class ServiceImpl : IDisposable
         if (!e.Data.StartsWith("{"))
             return;
 
-        var obj = JObject.Parse(e.Data);
+        _state = (JObject)JObject.Parse(e.Data)["result"]!["status"]!;
 
-        foreach (var entry in obj)
-        {
-            if (AllowedKeys.Contains(entry.Key))
-                _state[entry.Key] = entry.Value;
-        }
+        _state["connected"] = _crealityClient.IsConnected;
 
         await PublishState();
     }
@@ -86,7 +71,6 @@ public class ServiceImpl : IDisposable
     private async void Connect()
     {
         await _mqttClient.Connect();
-        await _crealityClient.Connect();
     }
 
     public void Dispose()
